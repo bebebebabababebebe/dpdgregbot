@@ -5,7 +5,7 @@ Telegram-бот для регистрации на сессию ДПДГ (aiogra
 1. /start -> отдельное согласие на обработку ПДн (до сбора данных).
 2. Отдельное принятие условий оферты.
 3. Ввод ФИО, телефона и почты через запятую.
-4. Отправка заявки администратору в ЛС с кнопкой подтверждения оплаты и выдача ссылки на оплату.
+4. Отправка заявки администратору в ЛС с кнопкой подтверждения оплаты и выдача кнопок оплаты (Т-Банк / Сбербанк).
 
 Сценарий администратора (в ЛС с ботом):
 - Нажатие «✅ Подтвердить оплату» под заявкой переводит клиента в статус оплатившего и уведомляет его.
@@ -46,7 +46,14 @@ OFFER_URL = os.getenv("OFFER_URL", "https://example.com/offer")
 PRIVACY_URL = os.getenv("PRIVACY_URL", "https://example.com/privacy")
 # Опционально: отдельная ссылка на текст согласия на обработку ПДн (если не задана, используется PRIVACY_URL)
 PDN_CONSENT_URL = os.getenv("PDN_CONSENT_URL", PRIVACY_URL)
-PAYMENT_URL = os.getenv("PAYMENT_URL", "https://example.com/pay")
+
+# Ссылки на оплату (если задана старая переменная PAYMENT_URL, она подхватится для Т-Банка)
+TBANK_PAYMENT_URL = os.getenv(
+    "TBANK_PAYMENT_URL",
+    os.getenv("PAYMENT_URL", "https://example.com/pay-tbank"),
+)
+SBER_PAYMENT_URL = os.getenv("SBER_PAYMENT_URL", "https://example.com/pay-sber")
+
 # Опционально: ссылка на конференцию по умолчанию (можно также вставить прямо в чате при рассылке)
 CONFERENCE_URL = os.getenv("CONFERENCE_URL", "").strip()
 
@@ -149,7 +156,11 @@ def mark_registration_paid(reg_id: int) -> str:
 
 def get_paid_recipients(only_unsent: bool = True) -> list[dict]:
     """Возвращает уникальных оплативших пользователей (по user_id)."""
-    condition = "status = 'paid' AND (conference_sent_at IS NULL OR conference_sent_at = '')" if only_unsent else "status = 'paid'"
+    condition = (
+        "status = 'paid' AND (conference_sent_at IS NULL OR conference_sent_at = '')"
+        if only_unsent
+        else "status = 'paid'"
+    )
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -258,7 +269,10 @@ def build_offer_keyboard() -> InlineKeyboardMarkup:
 
 def build_payment_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="💳 Перейти к оплате", url=PAYMENT_URL)]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Т-Банк", url=TBANK_PAYMENT_URL)],
+            [InlineKeyboardButton(text="💳 Сбербанк", url=SBER_PAYMENT_URL)],
+        ]
     )
 
 
@@ -419,7 +433,7 @@ async def handle_user_data(message: Message, state: FSMContext, bot: Bot) -> Non
 
     await message.answer(
         "Спасибо! Ваши данные получены.\n\n"
-        f"Для завершения записи перейдите по ссылке для оплаты:\n{PAYMENT_URL}\n\n"
+        "Для завершения записи выберите удобный способ оплаты по кнопкам ниже.\n\n"
         "После подтверждения оплаты мы пришлём вам уведомление и ссылку на конференцию.",
         reply_markup=build_payment_keyboard(),
         disable_web_page_preview=True,
@@ -473,7 +487,6 @@ async def handle_confirm_payment(callback: CallbackQuery, bot: Bot) -> None:
         except Exception:
             pass
 
-    # Уведомляем клиента, что оплата подтверждена
     notify_note = "Оплата подтверждена, клиент уведомлён."
     try:
         await bot.send_message(
