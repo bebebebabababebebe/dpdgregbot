@@ -19,7 +19,7 @@ import html
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
@@ -46,6 +46,8 @@ PDN_CONSENT_URL = os.getenv("PDN_CONSENT_URL", PRIVACY_URL)
 PAYMENT_URL = os.getenv("PAYMENT_URL", "https://example.com/pay")
 # ===================================================
 
+MSK_TZ = timezone(timedelta(hours=3))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -54,6 +56,11 @@ logger = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_DIGITS_RE = re.compile(r"\D+")
+
+
+def now_msk() -> str:
+    """Возвращает текущее московское время (UTC+3) в читаемом формате."""
+    return datetime.now(MSK_TZ).strftime("%d.%m.%Y %H:%M МСК")
 
 
 class Registration(StatesGroup):
@@ -148,8 +155,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 @dp.callback_query(Registration.waiting_for_pdn_consent, F.data == "agree_pdn")
 async def handle_pdn_consent(callback: CallbackQuery, state: FSMContext) -> None:
-    pdn_consent_at = datetime.now().strftime("%d.%m.%Y %H:%M")
-    await state.update_data(pdn_consent_at=pdn_consent_at)
+    await state.update_data(pdn_consent_at=now_msk())
     await state.set_state(Registration.waiting_for_offer_consent)
 
     await callback.answer("Согласие на обработку ПДн принято")
@@ -176,8 +182,7 @@ async def remind_pdn_consent(message: Message) -> None:
 
 @dp.callback_query(Registration.waiting_for_offer_consent, F.data == "agree_offer")
 async def handle_offer_consent(callback: CallbackQuery, state: FSMContext) -> None:
-    offer_consent_at = datetime.now().strftime("%d.%m.%Y %H:%M")
-    await state.update_data(offer_consent_at=offer_consent_at)
+    await state.update_data(offer_consent_at=now_msk())
     await state.set_state(Registration.waiting_for_data)
 
     await callback.answer("Условия оферты приняты")
